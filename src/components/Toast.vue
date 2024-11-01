@@ -1,16 +1,16 @@
 <template>
   <transition name="fade">
-    <div class="toast" v-show="toast.show">{{ toast.text }}</div>
+    <div v-show="toast.show" class="toast">{{ toast.text }}</div>
   </transition>
 </template>
 
 <script>
-import { mapState } from "vuex";
+import { mapState } from 'vuex';
 
 export default {
-  name: "Toast",
+  name: 'Toast',
   computed: {
-    ...mapState(["toast"]),
+    ...mapState(['toast']),
   },
 };
 </script>
@@ -30,10 +30,10 @@ export default {
   border-radius: 8px;
   box-sizing: border-box;
   padding: 6px 12px;
-  z-index: 100;
+  z-index: 1010;
 }
 
-[data-theme="dark"] {
+[data-theme='dark'] {
   .toast {
     background: rgba(46, 46, 46, 0.68);
     backdrop-filter: blur(16px) contrast(120%);

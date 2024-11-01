@@ -13,14 +13,12 @@
  */
 const nativeAlert = (() => {
   if (process.env.IS_ELECTRON === true) {
-    const {
-      remote: { dialog },
-    } = require("electron");
+    const { dialog } = require('electron');
     if (dialog) {
-      return (message) => {
+      return message => {
         var options = {
-          type: "warning",
-          detail: message,
+          type: 'warning',
+          message,
         };
         dialog.showMessageBoxSync(null, options);
       };

@@ -1,26 +1,43 @@
 <template>
   <transition name="slide-up">
-    <div class="lyrics-page" :class="{ 'no-lyric': noLyric }">
+    <div
+      class="lyrics-page"
+      :class="{ 'no-lyric': noLyric }"
+      :data-theme="theme"
+    >
       <div
-        v-if="this.$store.state.settings.showLyricsDynamicBackground"
-        class="dynamic-background"
+        v-if="
+          (settings.lyricsBackground === 'blur') |
+            (settings.lyricsBackground === 'dynamic')
+        "
+        class="lyrics-background"
+        :class="{
+          'dynamic-background': settings.lyricsBackground === 'dynamic',
+        }"
       >
-        <div v-show="this.$store.state.showLyrics">
-          <div
-            class="top-right"
-            :style="{ backgroundImage: `url(${imageUrl})` }"
-          />
-          <div
-            class="bottom-left"
-            :style="{ backgroundImage: `url(${imageUrl})` }"
-          />
-        </div>
+        <div
+          class="top-right"
+          :style="{ backgroundImage: `url(${bgImageUrl})` }"
+        />
+        <div
+          class="bottom-left"
+          :style="{ backgroundImage: `url(${bgImageUrl})` }"
+        />
       </div>
+      <div
+        v-if="settings.lyricsBackground === true"
+        class="gradient-background"
+        :style="{ background }"
+      ></div>
+
       <div class="left-side">
         <div>
+          <div v-if="settings.showLyricsTime" class="date">
+            {{ date }}
+          </div>
           <div class="cover">
             <div class="cover-container">
-              <img :src="imageUrl" />
+              <img :src="imageUrl" loading="lazy" />
               <div
                 class="shadow"
                 :style="{ backgroundImage: `url(${imageUrl})` }"
@@ -32,119 +49,179 @@
               <div class="track-info">
                 <div class="title" :title="currentTrack.name">
                   <router-link
-                    :to="`/${player.playlistSource.type}/${player.playlistSource.id}`"
+                    v-if="hasList()"
+                    :to="`${getListPath()}`"
                     @click.native="toggleLyrics"
                     >{{ currentTrack.name }}
                   </router-link>
+                  <span v-else>
+                    {{ currentTrack.name }}
+                  </span>
                 </div>
                 <div class="subtitle">
                   <router-link
-                    :to="`/artist/${currentTrack.ar[0].id}`"
+                    v-if="artist.id !== 0"
+                    :to="`/artist/${artist.id}`"
                     @click.native="toggleLyrics"
-                    >{{ currentTrack.ar[0].name }}
+                    >{{ artist.name }}
                   </router-link>
-                  -
-                  <router-link
-                    :to="`/album/${currentTrack.al.id}`"
-                    @click.native="toggleLyrics"
-                    :title="currentTrack.al.name"
-                    >{{ currentTrack.al.name }}
-                  </router-link>
+                  <span v-else>
+                    {{ artist.name }}
+                  </span>
+                  <span v-if="album.id !== 0">
+                    -
+                    <router-link
+                      :to="`/album/${album.id}`"
+                      :title="album.name"
+                      @click.native="toggleLyrics"
+                      >{{ album.name }}
+                    </router-link>
+                  </span>
                 </div>
               </div>
-              <div class="buttons">
-                <button-icon
-                  @click.native="playerRef.likeCurrentSong"
-                  :title="$t('player.like')"
-                >
-                  <svg-icon
-                    :icon-class="
-                      playerRef.isCurrentTrackLiked ? 'heart-solid' : 'heart'
-                    "
-                  />
-                </button-icon>
-                <!-- <button-icon @click.native="openMenu" title="Menu"
-                  ><svg-icon icon-class="more"
-                /></button-icon> -->
+              <div class="top-right">
+                <div class="volume-control">
+                  <button-icon :title="$t('player.mute')" @click.native="mute">
+                    <svg-icon v-show="volume > 0.5" icon-class="volume" />
+                    <svg-icon v-show="volume === 0" icon-class="volume-mute" />
+                    <svg-icon
+                      v-show="volume <= 0.5 && volume !== 0"
+                      icon-class="volume-half"
+                    />
+                  </button-icon>
+                  <div class="volume-bar">
+                    <vue-slider
+                      v-model="volume"
+                      :min="0"
+                      :max="1"
+                      :interval="0.01"
+                      :drag-on-click="true"
+                      :duration="0"
+                      tooltip="none"
+                      :dot-size="12"
+                    ></vue-slider>
+                  </div>
+                </div>
+                <div class="buttons">
+                  <button-icon
+                    :title="$t('player.like')"
+                    @click.native="likeATrack(player.currentTrack.id)"
+                  >
+                    <svg-icon
+                      :icon-class="
+                        player.isCurrentTrackLiked ? 'heart-solid' : 'heart'
+                      "
+                    />
+                  </button-icon>
+                  <button-icon
+                    :title="$t('contextMenu.addToPlaylist')"
+                    @click.native="addToPlaylist"
+                  >
+                    <svg-icon icon-class="plus" />
+                  </button-icon>
+                  <!-- <button-icon @click.native="openMenu" title="Menu"
+                    ><svg-icon icon-class="more"
+                  /></button-icon> -->
+                </div>
               </div>
             </div>
             <div class="progress-bar">
-              <span>{{ formatTrackTime(progress) || "0:00" }}</span>
+              <span>{{ formatTrackTime(player.progress) || '0:00' }}</span>
               <div class="slider">
                 <vue-slider
-                  v-model="progress"
+                  v-model="player.progress"
                   :min="0"
-                  :max="progressMax"
+                  :max="player.currentTrackDuration"
                   :interval="1"
                   :drag-on-click="true"
                   :duration="0"
-                  :dotSize="12"
+                  :dot-size="12"
                   :height="2"
-                  :tooltipFormatter="formatTrackTime"
-                  @drag-end="setSeek"
-                  ref="progress"
+                  :tooltip-formatter="formatTrackTime"
+                  :lazy="true"
+                  :silent="true"
                 ></vue-slider>
               </div>
-              <span>{{ formatTrackTime(progressMax) }}</span>
+              <span>{{ formatTrackTime(player.currentTrackDuration) }}</span>
             </div>
             <div class="media-controls">
               <button-icon
                 v-show="!player.isPersonalFM"
-                @click.native="playerRef.repeat"
                 :title="
                   player.repeatMode === 'one'
                     ? $t('player.repeatTrack')
                     : $t('player.repeat')
                 "
                 :class="{ active: player.repeatMode !== 'off' }"
+                @click.native="switchRepeatMode"
               >
                 <svg-icon
-                  icon-class="repeat"
                   v-show="player.repeatMode !== 'one'"
+                  icon-class="repeat"
                 />
                 <svg-icon
-                  icon-class="repeat-1"
                   v-show="player.repeatMode === 'one'"
+                  icon-class="repeat-1"
                 />
               </button-icon>
               <div class="middle">
                 <button-icon
                   v-show="!player.isPersonalFM"
-                  @click.native="playerRef.previous"
                   :title="$t('player.previous')"
+                  @click.native="playPrevTrack"
                 >
                   <svg-icon icon-class="previous" />
                 </button-icon>
                 <button-icon
                   v-show="player.isPersonalFM"
-                  @click.native="moveToFMTrash"
                   title="不喜欢"
+                  @click.native="moveToFMTrash"
                 >
                   <svg-icon icon-class="thumbs-down" />
                 </button-icon>
                 <button-icon
                   id="play"
-                  @click.native="playerRef.play"
                   :title="$t(player.playing ? 'player.pause' : 'player.play')"
+                  @click.native="playOrPause"
                 >
-                  <svg-icon
-                    :icon-class="playerRef.playing ? 'pause' : 'play'"
-                  />
+                  <svg-icon :icon-class="player.playing ? 'pause' : 'play'" />
                 </button-icon>
                 <button-icon
-                  @click.native="playerRef.next"
                   :title="$t('player.next')"
+                  @click.native="playNextTrack"
                 >
                   <svg-icon icon-class="next" />
                 </button-icon>
               </div>
               <button-icon
                 v-show="!player.isPersonalFM"
-                @click.native="playerRef.shuffle"
                 :title="$t('player.shuffle')"
                 :class="{ active: player.shuffle }"
+                @click.native="switchShuffle"
               >
                 <svg-icon icon-class="shuffle" />
+              </button-icon>
+              <button-icon
+                v-show="
+                  isShowLyricTypeSwitch &&
+                  $store.state.settings.showLyricsTranslation &&
+                  lyricType === 'translation'
+                "
+                :title="$t('player.translationLyric')"
+                @click.native="switchLyricType"
+              >
+                <span class="lyric-switch-icon">译</span>
+              </button-icon>
+              <button-icon
+                v-show="
+                  isShowLyricTypeSwitch &&
+                  $store.state.settings.showLyricsTranslation &&
+                  lyricType === 'romaPronunciation'
+                "
+                :title="$t('player.PronunciationLyric')"
+                @click.native="switchLyricType"
+              >
+                <span class="lyric-switch-icon">音</span>
               </button-icon>
             </div>
           </div>
@@ -153,29 +230,68 @@
       <div class="right-side">
         <transition name="slide-fade">
           <div
+            v-show="!noLyric"
+            ref="lyricsContainer"
             class="lyrics-container"
             :style="lyricFontSize"
-            ref="lyricsContainer"
-            v-show="!noLyric"
           >
-            <div class="line" id="line-1"></div>
+            <div id="line-1" class="line"></div>
             <div
+              v-for="(line, index) in lyricToShow"
+              :id="`line${index}`"
+              :key="index"
               class="line"
               :class="{
                 highlight: highlightLyricIndex === index,
               }"
-              v-for="(line, index) in lyricWithTranslation"
-              :key="index"
-              :id="`line${index}`"
               @click="clickLyricLine(line.time)"
-              ><span v-html="formatLine(line)"></span
-            ></div>
+              @dblclick="clickLyricLine(line.time, true)"
+            >
+              <div class="content">
+                <span
+                  v-if="line.contents[0]"
+                  @click.right="openLyricMenu($event, line, 0)"
+                  >{{ line.contents[0] }}</span
+                >
+                <br />
+                <span
+                  v-if="
+                    line.contents[1] &&
+                    $store.state.settings.showLyricsTranslation
+                  "
+                  class="translation"
+                  @click.right="openLyricMenu($event, line, 1)"
+                  >{{ line.contents[1] }}</span
+                >
+              </div>
+            </div>
+            <ContextMenu v-if="!noLyric" ref="lyricMenu">
+              <div class="item" @click="copyLyric(false)">{{
+                $t('contextMenu.copyLyric')
+              }}</div>
+              <div
+                v-if="
+                  rightClickLyric &&
+                  rightClickLyric.contents[1] &&
+                  $store.state.settings.showLyricsTranslation
+                "
+                class="item"
+                @click="copyLyric(true)"
+                >{{ $t('contextMenu.copyLyricWithTranslation') }}</div
+              >
+            </ContextMenu>
           </div>
         </transition>
       </div>
       <div class="close-button" @click="toggleLyrics">
         <button>
           <svg-icon icon-class="arrow-down" />
+        </button>
+      </div>
+      <div class="close-button" style="left: 24px" @click="fullscreen">
+        <button>
+          <svg-icon v-if="isFullscreen" icon-class="fullscreen-exit" />
+          <svg-icon v-else icon-class="fullscreen" />
         </button>
       </div>
     </div>
@@ -186,46 +302,67 @@
 // The lyrics page of Apple Music is so gorgeous, so I copy the design.
 // Some of the codes are from https://github.com/sl1673495/vue-netease-music
 
-import { mapState, mapMutations } from "vuex";
-import VueSlider from "vue-slider-component";
-import { formatTrackTime } from "@/utils/common";
-import { getLyric } from "@/api/track";
-import { lyricParser } from "@/utils/lyrics";
-import ButtonIcon from "@/components/ButtonIcon.vue";
+import { mapState, mapMutations, mapActions } from 'vuex';
+import VueSlider from 'vue-slider-component';
+import ContextMenu from '@/components/ContextMenu.vue';
+import { formatTrackTime } from '@/utils/common';
+import { getLyric } from '@/api/track';
+import { lyricParser, copyLyric } from '@/utils/lyrics';
+import ButtonIcon from '@/components/ButtonIcon.vue';
+import * as Vibrant from 'node-vibrant/dist/vibrant.worker.min.js';
+import Color from 'color';
+import { isAccountLoggedIn } from '@/utils/auth';
+import { hasListSource, getListSourcePath } from '@/utils/playList';
+import locale from '@/locale';
 
 export default {
-  name: "Lyrics",
+  name: 'Lyrics',
   components: {
     VueSlider,
     ButtonIcon,
+    ContextMenu,
   },
   data() {
     return {
       lyricsInterval: null,
       lyric: [],
       tlyric: [],
+      romalyric: [],
+      lyricType: 'translation', // or 'romaPronunciation'
       highlightLyricIndex: -1,
       minimize: true,
+      background: '',
+      date: this.formatTime(new Date()),
+      isFullscreen: !!document.fullscreenElement,
+      rightClickLyric: null,
     };
   },
   computed: {
-    ...mapState(["player"]),
+    ...mapState(['player', 'settings', 'showLyrics']),
     currentTrack() {
       return this.player.currentTrack;
     },
-    imageUrl() {
-      return this.player.currentTrack.al.picUrl + "?param=1024y1024";
-    },
-    progress: {
+    volume: {
       get() {
-        return this.$parent.$refs.player.progress;
+        return this.player.volume;
       },
       set(value) {
-        this.$parent.$refs.player.setProgress(value);
+        this.player.volume = value;
       },
     },
-    progressMax() {
-      return this.$parent.$refs.player.progressMax;
+    imageUrl() {
+      return this.player.currentTrack?.al?.picUrl + '?param=1024y1024';
+    },
+    bgImageUrl() {
+      return this.player.currentTrack?.al?.picUrl + '?param=512y512';
+    },
+    isShowLyricTypeSwitch() {
+      return this.romalyric.length > 0 && this.tlyric.length > 0;
+    },
+    lyricToShow() {
+      return this.lyricType === 'translation'
+        ? this.lyricWithTranslation
+        : this.lyricWithRomaPronunciation;
     },
     lyricWithTranslation() {
       let ret = [];
@@ -235,7 +372,7 @@ export default {
       );
       // content统一转换数组形式
       if (lyricFiltered.length) {
-        lyricFiltered.forEach((l) => {
+        lyricFiltered.forEach(l => {
           const { rawTime, time, content } = l;
           const lyricItem = { time, content, contents: [content] };
           const sameTimeTLyric = this.tlyric.find(
@@ -258,63 +395,239 @@ export default {
       }
       return ret;
     },
+    lyricWithRomaPronunciation() {
+      let ret = [];
+      // 空内容的去除
+      const lyricFiltered = this.lyric.filter(({ content }) =>
+        Boolean(content)
+      );
+      // content统一转换数组形式
+      if (lyricFiltered.length) {
+        lyricFiltered.forEach(l => {
+          const { rawTime, time, content } = l;
+          const lyricItem = { time, content, contents: [content] };
+          const sameTimeRomaLyric = this.romalyric.find(
+            ({ rawTime: tLyricRawTime }) => tLyricRawTime === rawTime
+          );
+          if (sameTimeRomaLyric) {
+            const { content: romaLyricContent } = sameTimeRomaLyric;
+            if (content) {
+              lyricItem.contents.push(romaLyricContent);
+            }
+          }
+          ret.push(lyricItem);
+        });
+      } else {
+        ret = lyricFiltered.map(({ time, content }) => ({
+          time,
+          content,
+          contents: [content],
+        }));
+      }
+      return ret;
+    },
     lyricFontSize() {
       return {
         fontSize: `${this.$store.state.settings.lyricFontSize || 28}px`,
       };
     },
-    playerRef() {
-      return this.$parent.$refs.player;
-    },
-    showLyrics() {
-      return this.$store.state.showLyrics;
-    },
     noLyric() {
       return this.lyric.length == 0;
+    },
+    artist() {
+      return this.currentTrack?.ar
+        ? this.currentTrack.ar[0]
+        : { id: 0, name: 'unknown' };
+    },
+    album() {
+      return this.currentTrack?.al || { id: 0, name: 'unknown' };
+    },
+    theme() {
+      return this.settings.lyricsBackground === true ? 'dark' : 'auto';
+    },
+  },
+  watch: {
+    currentTrack() {
+      this.getLyric();
+      this.getCoverColor();
+    },
+    showLyrics(show) {
+      if (show) {
+        this.setLyricsInterval();
+        this.$store.commit('enableScrolling', false);
+      } else {
+        clearInterval(this.lyricsInterval);
+        this.$store.commit('enableScrolling', true);
+      }
     },
   },
   created() {
     this.getLyric();
+    this.getCoverColor();
+    this.initDate();
+    document.addEventListener('keydown', e => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        this.fullscreen();
+      }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      this.isFullscreen = !!document.fullscreenElement;
+    });
+  },
+  beforeDestroy: function () {
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
   },
   destroyed() {
     clearInterval(this.lyricsInterval);
   },
   methods: {
-    ...mapMutations(["toggleLyrics"]),
+    ...mapMutations(['toggleLyrics', 'updateModal']),
+    ...mapActions(['likeATrack']),
+    initDate() {
+      var _this = this;
+      clearInterval(this.timer);
+      this.timer = setInterval(function () {
+        _this.date = _this.formatTime(new Date());
+      }, 1000);
+    },
+    formatTime(value) {
+      let hour = value.getHours().toString();
+      let minute = value.getMinutes().toString();
+      let second = value.getSeconds().toString();
+      return (
+        hour.padStart(2, '0') +
+        ':' +
+        minute.padStart(2, '0') +
+        ':' +
+        second.padStart(2, '0')
+      );
+    },
+    fullscreen() {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        document.documentElement.requestFullscreen();
+      }
+    },
+    addToPlaylist() {
+      if (!isAccountLoggedIn()) {
+        this.showToast(locale.t('toast.needToLogin'));
+        return;
+      }
+      this.$store.dispatch('fetchLikedPlaylist');
+      this.updateModal({
+        modalName: 'addTrackToPlaylistModal',
+        key: 'show',
+        value: true,
+      });
+      this.updateModal({
+        modalName: 'addTrackToPlaylistModal',
+        key: 'selectedTrackID',
+        value: this.currentTrack?.id,
+      });
+    },
+    playPrevTrack() {
+      this.player.playPrevTrack();
+    },
+    playOrPause() {
+      this.player.playOrPause();
+    },
+    playNextTrack() {
+      if (this.player.isPersonalFM) {
+        this.player.playNextFMTrack();
+      } else {
+        this.player.playNextTrack();
+      }
+    },
     getLyric() {
-      return getLyric(this.currentTrack.id).then((data) => {
+      if (!this.currentTrack.id) return;
+      return getLyric(this.currentTrack.id).then(data => {
         if (!data?.lrc?.lyric) {
           this.lyric = [];
           this.tlyric = [];
+          this.romalyric = [];
           return false;
         } else {
-          let { lyric, tlyric } = lyricParser(data);
-          this.lyric = lyric;
-          this.tlyric = tlyric;
-          return true;
+          let { lyric, tlyric, romalyric } = lyricParser(data);
+          lyric = lyric.filter(
+            l => !/^作(词|曲)\s*(:|：)\s*无$/.exec(l.content)
+          );
+          let includeAM =
+            lyric.length <= 10 &&
+            lyric.map(l => l.content).includes('纯音乐，请欣赏');
+          if (includeAM) {
+            let reg = /^作(词|曲)\s*(:|：)\s*/;
+            let author = this.currentTrack?.ar[0]?.name;
+            lyric = lyric.filter(l => {
+              let regExpArr = l.content.match(reg);
+              return (
+                !regExpArr || l.content.replace(regExpArr[0], '') !== author
+              );
+            });
+          }
+          if (lyric.length === 1 && includeAM) {
+            this.lyric = [];
+            this.tlyric = [];
+            this.romalyric = [];
+            return false;
+          } else {
+            this.lyric = lyric;
+            this.tlyric = tlyric;
+            this.romalyric = romalyric;
+            if (tlyric.length * romalyric.length > 0) {
+              this.lyricType = 'translation';
+            } else {
+              this.lyricType =
+                lyric.length > 0 ? 'translation' : 'romaPronunciation';
+            }
+            return true;
+          }
         }
       });
+    },
+    switchLyricType() {
+      this.lyricType =
+        this.lyricType === 'translation' ? 'romaPronunciation' : 'translation';
     },
     formatTrackTime(value) {
       return formatTrackTime(value);
     },
-    setSeek() {
-      let value = this.$refs.progress.getValue();
-      this.$parent.$refs.player.setProgress(value);
-      this.$parent.$refs.player.player.seek(value);
+    clickLyricLine(value, startPlay = false) {
+      // TODO: 双击选择还会选中文字，考虑搞个右键菜单复制歌词
+      let jumpFlag = false;
+      this.lyric.filter(function (item) {
+        if (item.content == '纯音乐，请欣赏') {
+          jumpFlag = true;
+        }
+      });
+      if (window.getSelection().toString().length === 0 && !jumpFlag) {
+        this.player.seek(value);
+      }
+      if (startPlay === true) {
+        this.player.play();
+      }
     },
-    seek(value) {
-      this.$parent.$refs.player.setProgress(value);
-      this.$parent.$refs.player.player.seek(value);
+    openLyricMenu(e, lyric, idx) {
+      this.rightClickLyric = { ...lyric, idx };
+      this.$refs.lyricMenu.openMenu(e);
+      e.preventDefault();
     },
-    clickLyricLine(value) {
-      if (window.getSelection().toString().length === 0) {
-        this.seek(value);
+    copyLyric(withTranslation) {
+      if (this.rightClickLyric) {
+        const idx = this.rightClickLyric.idx;
+        if (!withTranslation) {
+          copyLyric(this.rightClickLyric.contents[idx]);
+        } else {
+          copyLyric(this.rightClickLyric.contents.join(' '));
+        }
       }
     },
     setLyricsInterval() {
       this.lyricsInterval = setInterval(() => {
-        const progress = this.player.seek() ?? 0;
+        const progress = this.player.seek(null, false) ?? 0;
         let oldHighlightLyricIndex = this.highlightLyricIndex;
         this.highlightLyricIndex = this.lyric.findIndex((l, index) => {
           const nextLyric = this.lyric[index + 1];
@@ -326,35 +639,41 @@ export default {
           const el = document.getElementById(`line${this.highlightLyricIndex}`);
           if (el)
             el.scrollIntoView({
-              behavior: "smooth",
-              block: "center",
+              behavior: 'smooth',
+              block: 'center',
             });
         }
       }, 50);
     },
-    formatLine(line) {
-      const showLyricsTranslation = this.$store.state.settings
-        .showLyricsTranslation;
-      if (showLyricsTranslation && line.contents[1]) {
-        return `<span>${line.contents[0]}<br/>${line.contents[1]}</span>`;
-      } else {
-        return `<span>${line.contents[0]}</span>`;
-      }
-    },
     moveToFMTrash() {
       this.player.moveToFMTrash();
     },
-  },
-  watch: {
-    currentTrack() {
-      this.getLyric();
+    switchRepeatMode() {
+      this.player.switchRepeatMode();
     },
-    showLyrics(show) {
-      if (show) {
-        this.setLyricsInterval();
-      } else {
-        clearInterval(this.lyricsInterval);
-      }
+    switchShuffle() {
+      this.player.switchShuffle();
+    },
+    getCoverColor() {
+      if (this.settings.lyricsBackground !== true) return;
+      const cover = this.currentTrack.al?.picUrl + '?param=256y256';
+      Vibrant.from(cover, { colorCount: 1 })
+        .getPalette()
+        .then(palette => {
+          const originColor = Color.rgb(palette.DarkMuted._rgb);
+          const color = originColor.darken(0.1).rgb().string();
+          const color2 = originColor.lighten(0.28).rotate(-30).rgb().string();
+          this.background = `linear-gradient(to top left, ${color}, ${color2})`;
+        });
+    },
+    hasList() {
+      return hasListSource();
+    },
+    getListPath() {
+      return getListSourcePath();
+    },
+    mute() {
+      this.player.mute();
     },
   },
 };
@@ -370,29 +689,33 @@ export default {
   z-index: 200;
   background: var(--color-body-bg);
   display: flex;
+  clip: rect(auto, auto, auto, auto);
 }
 
-.dynamic-background {
-  --contrast-dynamic-background: 75%;
-  --brightness-dynamic-background: 150%;
+.lyrics-background {
+  --contrast-lyrics-background: 75%;
+  --brightness-lyrics-background: 150%;
 }
 
-[data-theme="dark"] .dynamic-background {
-  --contrast-dynamic-background: 125%;
-  --brightness-dynamic-background: 50%;
+[data-theme='dark'] .lyrics-background {
+  --contrast-lyrics-background: 125%;
+  --brightness-lyrics-background: 50%;
 }
 
-.dynamic-background {
+.lyrics-background {
+  filter: blur(50px) contrast(var(--contrast-lyrics-background))
+    brightness(var(--brightness-lyrics-background));
+  position: absolute;
+  height: 100vh;
+  width: 100vw;
   .top-right,
   .bottom-left {
     z-index: 0;
     width: 140vw;
     height: 140vw;
+    opacity: 0.6;
     position: absolute;
-    filter: blur(50px) opacity(0.6) contrast(var(--contrast-dynamic-background))
-      brightness(var(--brightness-dynamic-background));
     background-size: cover;
-    animation: rotate 150s linear infinite;
   }
 
   .top-right {
@@ -409,6 +732,10 @@ export default {
   }
 }
 
+.dynamic-background > div {
+  animation: rotate 150s linear infinite;
+}
+
 @keyframes rotate {
   0% {
     transform: rotate(0deg);
@@ -416,6 +743,12 @@ export default {
   100% {
     transform: rotate(360deg);
   }
+}
+
+.gradient-background {
+  position: absolute;
+  height: 100vh;
+  width: 100vw;
 }
 
 .left-side {
@@ -426,6 +759,22 @@ export default {
   margin-top: 24px;
   align-items: center;
   transition: all 0.5s;
+
+  z-index: 1;
+
+  .date {
+    max-width: 54vh;
+    margin: 24px 0;
+    color: var(--color-text);
+    text-align: center;
+    font-size: 4rem;
+    font-weight: 600;
+    opacity: 0.88;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    overflow: hidden;
+  }
 
   .controls {
     max-width: 54vh;
@@ -457,18 +806,31 @@ export default {
       display: flex;
       justify-content: space-between;
 
-      .buttons {
+      .top-right {
         display: flex;
-        align-items: center;
+        justify-content: space-between;
 
-        button {
-          margin: 0 0 0 4px;
+        .volume-control {
+          margin: 0 10px;
+          display: flex;
+          align-items: center;
+          .volume-bar {
+            width: 84px;
+          }
         }
 
-        .svg-icon {
-          opacity: 0.58;
-          height: 18px;
-          width: 18px;
+        .buttons {
+          display: flex;
+          align-items: center;
+
+          button {
+            margin: 0 0 0 4px;
+          }
+
+          .svg-icon {
+            height: 18px;
+            width: 18px;
+          }
         }
       }
     }
@@ -533,6 +895,12 @@ export default {
           width: 22px;
         }
       }
+      .lyric-switch-icon {
+        color: var(--color-text);
+        font-size: 14px;
+        line-height: 14px;
+        opacity: 0.88;
+      }
     }
   }
 }
@@ -570,6 +938,7 @@ export default {
   font-weight: 600;
   color: var(--color-text);
   margin-right: 24px;
+  z-index: 0;
 
   .lyrics-container {
     height: 100%;
@@ -579,19 +948,35 @@ export default {
     max-width: 460px;
     overflow-y: auto;
     transition: 0.5s;
+    scrollbar-width: none; // firefox
 
     .line {
-      padding: 18px;
-      transition: 0.2s;
+      margin: 2px 0;
+      padding: 12px 18px;
+      transition: 0.5s;
       border-radius: 12px;
 
       &:hover {
-        background: var(--color-secondary-bg);
+        background: var(--color-secondary-bg-for-transparent);
       }
 
-      span {
-        opacity: 0.28;
-        cursor: default;
+      .content {
+        transform-origin: center left;
+        transform: scale(0.95);
+        transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        user-select: none;
+
+        span {
+          opacity: 0.28;
+          cursor: default;
+          font-size: 1em;
+          transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        span.translation {
+          opacity: 0.2;
+          font-size: 0.925em;
+        }
       }
     }
 
@@ -599,9 +984,20 @@ export default {
       background: unset;
     }
 
-    .highlight span {
-      opacity: 0.98;
-      transition: 0.5s;
+    .translation {
+      margin-top: 0.1em;
+    }
+
+    .highlight div.content {
+      transform: scale(1);
+      span {
+        opacity: 0.98;
+        display: inline-block;
+      }
+
+      span.translation {
+        opacity: 0.65;
+      }
     }
   }
 
@@ -651,6 +1047,21 @@ export default {
     transition: all 0.5s;
     transform: translateX(27vh);
     margin-right: 0;
+  }
+}
+
+@media (max-aspect-ratio: 10/9) {
+  .left-side {
+    display: none;
+  }
+  .right-side .lyrics-container {
+    max-width: 100%;
+  }
+}
+
+@media screen and (min-width: 1200px) {
+  .right-side .lyrics-container {
+    max-width: 600px;
   }
 }
 

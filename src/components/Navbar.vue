@@ -1,27 +1,8 @@
 <template>
   <div>
-    <nav>
-      <div class="win32-titlebar">
-        <div class="title">YesPlayMusic</div>
-        <div class="controls">
-          <div
-            class="button minimize codicon codicon-chrome-minimize"
-            @click="windowMinimize"
-          ></div>
-          <div
-            class="button max-restore codicon"
-            @click="windowMaxRestore"
-            :class="{
-              'codicon-chrome-restore': windowIsMaximized,
-              'codicon-chrome-maximize': !windowIsMaximized,
-            }"
-          ></div>
-          <div
-            class="button close codicon codicon-chrome-close"
-            @click="windowClose"
-          ></div>
-        </div>
-      </div>
+    <nav :class="{ 'has-custom-titlebar': hasCustomTitlebar }">
+      <Win32Titlebar v-if="enableWin32Titlebar" />
+      <LinuxTitlebar v-if="enableLinuxTitlebar" />
       <div class="navigation-buttons">
         <button-icon @click.native="go('back')"
           ><svg-icon icon-class="arrow-left"
@@ -31,18 +12,18 @@
         /></button-icon>
       </div>
       <div class="navigation-links">
-        <router-link to="/" :class="{ active: this.$route.name === 'home' }">{{
-          $t("nav.home")
+        <router-link to="/" :class="{ active: $route.name === 'home' }">{{
+          $t('nav.home')
         }}</router-link>
         <router-link
           to="/explore"
-          :class="{ active: this.$route.name === 'explore' }"
-          >{{ $t("nav.explore") }}</router-link
+          :class="{ active: $route.name === 'explore' }"
+          >{{ $t('nav.explore') }}</router-link
         >
         <router-link
           to="/library"
-          :class="{ active: this.$route.name === 'library' }"
-          >{{ $t("nav.library") }}</router-link
+          :class="{ active: $route.name === 'library' }"
+          >{{ $t('nav.library') }}</router-link
         >
       </div>
       <div class="right-part">
@@ -52,8 +33,9 @@
             <div class="input">
               <input
                 ref="searchInput"
-                :placeholder="inputFocus ? '' : $t('nav.search')"
                 v-model="keywords"
+                type="search"
+                :placeholder="inputFocus ? '' : $t('nav.search')"
                 @keydown.enter="doSearch"
                 @focus="inputFocus = true"
                 @blur="inputFocus = false"
@@ -61,89 +43,106 @@
             </div>
           </div>
         </div>
-        <img class="avatar" :src="avatarUrl" @click="showUserProfileMenu" />
+        <img
+          class="avatar"
+          :src="avatarUrl"
+          @click="showUserProfileMenu"
+          loading="lazy"
+        />
       </div>
     </nav>
 
     <ContextMenu ref="userProfileMenu">
       <div class="item" @click="toSettings">
         <svg-icon icon-class="settings" />
-        {{ $t("library.userProfileMenu.settings") }}
+        {{ $t('library.userProfileMenu.settings') }}
       </div>
-      <div class="item" @click="toLogin" v-if="!isLooseLoggedIn">
+      <div v-if="!isLooseLoggedIn" class="item" @click="toLogin">
         <svg-icon icon-class="login" />
-        {{ $t("login.login") }}
+        {{ $t('login.login') }}
       </div>
-      <div class="item" @click="logout" v-if="isLooseLoggedIn">
+      <div v-if="isLooseLoggedIn" class="item" @click="logout">
         <svg-icon icon-class="logout" />
-        {{ $t("library.userProfileMenu.logout") }}
+        {{ $t('library.userProfileMenu.logout') }}
       </div>
       <hr />
       <div class="item" @click="toGitHub">
         <svg-icon icon-class="github" />
-        {{ $t("nav.github") }}
+        {{ $t('nav.github') }}
       </div>
     </ContextMenu>
   </div>
 </template>
 
 <script>
-import { mapState } from "vuex";
-import { isLooseLoggedIn, doLogout } from "@/utils/auth";
+import { mapState } from 'vuex';
+import { isLooseLoggedIn, doLogout } from '@/utils/auth';
 
 // import icons for win32 title bar
 // icons by https://github.com/microsoft/vscode-codicons
-import "vscode-codicons/dist/codicon.css";
+import 'vscode-codicons/dist/codicon.css';
 
-import ContextMenu from "@/components/ContextMenu.vue";
-import ButtonIcon from "@/components/ButtonIcon.vue";
-
-let win = undefined;
-if (process.env.IS_ELECTRON === true) {
-  const electron = require("electron");
-  win = electron.remote.BrowserWindow.getFocusedWindow();
-}
+import Win32Titlebar from '@/components/Win32Titlebar.vue';
+import LinuxTitlebar from '@/components/LinuxTitlebar.vue';
+import ContextMenu from '@/components/ContextMenu.vue';
+import ButtonIcon from '@/components/ButtonIcon.vue';
 
 export default {
-  name: "Navbar",
+  name: 'Navbar',
   components: {
+    Win32Titlebar,
+    LinuxTitlebar,
     ButtonIcon,
     ContextMenu,
   },
   data() {
     return {
       inputFocus: false,
-      langs: ["zh-CN", "en", "tr"],
-      keywords: "",
-      windowIsMaximized: win ? win.isMaximized() : true,
+      langs: ['zh-CN', 'zh-TW', 'en', 'tr'],
+      keywords: '',
+      enableWin32Titlebar: false,
+      enableLinuxTitlebar: false,
     };
   },
   computed: {
-    ...mapState(["settings", "data"]),
+    ...mapState(['settings', 'data']),
     isLooseLoggedIn() {
       return isLooseLoggedIn();
     },
     avatarUrl() {
-      return this.data.user.avatarUrl
-        ? `${this.data.user.avatarUrl}?param=512y512`
-        : "http://s4.music.126.net/style/web2/img/default/default_avatar.jpg?param=60y60";
+      return this.data?.user?.avatarUrl && this.isLooseLoggedIn
+        ? `${this.data?.user?.avatarUrl}?param=512y512`
+        : 'http://s4.music.126.net/style/web2/img/default/default_avatar.jpg?param=60y60';
     },
+    hasCustomTitlebar() {
+      return this.enableWin32Titlebar || this.enableLinuxTitlebar;
+    },
+  },
+  created() {
+    if (process.platform === 'win32') {
+      this.enableWin32Titlebar = true;
+    } else if (
+      process.platform === 'linux' &&
+      this.settings.linuxEnableCustomTitlebar
+    ) {
+      this.enableLinuxTitlebar = true;
+    }
   },
   methods: {
     go(where) {
-      if (where === "back") this.$router.go(-1);
+      if (where === 'back') this.$router.go(-1);
       else this.$router.go(1);
     },
     doSearch() {
       if (!this.keywords) return;
       if (
-        this.$route.name === "search" &&
+        this.$route.name === 'search' &&
         this.$route.params.keywords === this.keywords
       ) {
         return;
       }
       this.$router.push({
-        name: "search",
+        name: 'search',
         params: { keywords: this.keywords },
       });
     },
@@ -151,33 +150,22 @@ export default {
       this.$refs.userProfileMenu.openMenu(e);
     },
     logout() {
-      if (!confirm("确定要退出登录吗？")) return;
+      if (!confirm('确定要退出登录吗？')) return;
       doLogout();
-      this.$router.push({ name: "home" });
+      this.$router.push({ name: 'home' });
     },
     toSettings() {
-      this.$router.push({ name: "settings" });
+      this.$router.push({ name: 'settings' });
     },
     toGitHub() {
-      window.open("https://github.com/qier222/YesPlayMusic");
+      window.open('https://github.com/qier222/YesPlayMusic');
     },
     toLogin() {
-      this.$router.push({ name: "login" });
-    },
-    windowMinimize() {
-      win.minimize();
-    },
-    windowMaxRestore() {
-      if (win.isMaximized()) {
-        win.restore();
-        this.windowIsMaximized = false;
+      if (process.env.IS_ELECTRON === true) {
+        this.$router.push({ name: 'loginAccount' });
       } else {
-        win.maximize();
-        this.windowIsMaximized = true;
+        this.$router.push({ name: 'login' });
       }
-    },
-    windowClose() {
-      win.close();
     },
   },
 };
@@ -206,7 +194,7 @@ nav {
 
 @media (max-width: 1336px) {
   nav {
-    padding: 0 5vw;
+    padding: 0 max(5vw, 90px);
   }
 }
 
@@ -216,68 +204,9 @@ nav {
   }
 }
 
-.win32-titlebar {
-  display: none;
-}
-
-[data-electron-os="win32"] {
-  nav {
-    padding-top: 20px;
-    -webkit-app-region: no-drag;
-  }
-  .win32-titlebar {
-    color: var(--color-text);
-    position: fixed;
-    left: 0;
-    top: 0;
-    right: 0;
-    -webkit-app-region: drag;
-    display: flex;
-    align-items: center;
-    --hover: #e6e6e6;
-    --active: #cccccc;
-
-    .title {
-      padding: 8px;
-      font-size: 12px;
-      font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei",
-        sans-serif;
-    }
-    .controls {
-      height: 32px;
-      margin-left: auto;
-      justify-content: flex-end;
-      display: flex;
-      .button {
-        height: 100%;
-        width: 46px;
-        font-size: 16px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        -webkit-app-region: no-drag;
-        &:hover {
-          background: var(--hover);
-        }
-        &:active {
-          background: var(--active);
-        }
-        &.close {
-          &:hover {
-            background: rgba(232, 17, 35, 0.9);
-          }
-          &:active {
-            background: #f1707a;
-            color: #000;
-          }
-        }
-      }
-    }
-  }
-  &[data-theme="dark"] .win32-titlebar {
-    --hover: #191919;
-    --active: #333333;
-  }
+nav.has-custom-titlebar {
+  padding-top: 20px;
+  -webkit-app-region: no-drag;
 }
 
 .navigation-buttons {
@@ -383,7 +312,7 @@ nav {
   }
 }
 
-[data-theme="dark"] {
+[data-theme='dark'] {
   .search-box {
     .active {
       input,
@@ -400,6 +329,7 @@ nav {
   align-items: center;
   justify-content: flex-end;
   .avatar {
+    user-select: none;
     height: 30px;
     margin-left: 12px;
     vertical-align: -7px;

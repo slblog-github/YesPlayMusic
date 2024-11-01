@@ -1,8 +1,10 @@
 <template>
-  <div class="fm">
+  <div class="fm" :style="{ background }" data-theme="dark">
+    <img :src="nextTrackCover" style="display: none" loading="lazy" />
     <img
       class="cover"
       :src="track.album && track.album.picUrl | resizeImage(512)"
+      loading="lazy"
       @click="goToAlbum"
     />
     <div class="right-part">
@@ -12,19 +14,20 @@
       </div>
       <div class="controls">
         <div class="buttons">
-          <button-icon @click.native="moveToFMTrash" title="不喜欢"
-            ><svg-icon icon-class="thumbs-down" id="thumbs-down"
-          /></button-icon>
+          <button-icon title="不喜欢" @click.native="moveToFMTrash">
+            <svg-icon id="thumbs-down" icon-class="thumbs-down" />
+          </button-icon>
           <button-icon
+            :title="$t(isPlaying ? 'player.pause' : 'player.play')"
             class="play"
             @click.native="play"
-            :title="$t(isPlaying ? 'player.pause' : 'player.play')"
           >
-            <svg-icon :iconClass="isPlaying ? 'pause' : 'play'"
-          /></button-icon>
-          <button-icon @click.native="next" :title="$t('player.next')"
-            ><svg-icon icon-class="next" /></button-icon
-        ></div>
+            <svg-icon :icon-class="isPlaying ? 'pause' : 'play'" />
+          </button-icon>
+          <button-icon :title="$t('player.next')" @click.native="next">
+            <svg-icon icon-class="next" />
+          </button-icon>
+        </div>
         <div class="card-name"><svg-icon icon-class="fm" />私人FM</div>
       </div>
     </div>
@@ -32,15 +35,22 @@
 </template>
 
 <script>
-import ButtonIcon from "@/components/ButtonIcon.vue";
-import ArtistsInLine from "@/components/ArtistsInLine.vue";
-import { mapState } from "vuex";
+import ButtonIcon from '@/components/ButtonIcon.vue';
+import ArtistsInLine from '@/components/ArtistsInLine.vue';
+import { mapState } from 'vuex';
+import * as Vibrant from 'node-vibrant/dist/vibrant.worker.min.js';
+import Color from 'color';
 
 export default {
-  name: "FMCard",
+  name: 'FMCard',
   components: { ButtonIcon, ArtistsInLine },
+  data() {
+    return {
+      background: '',
+    };
+  },
   computed: {
-    ...mapState(["player"]),
+    ...mapState(['player']),
     track() {
       return this.player.personalFMTrack;
     },
@@ -50,20 +60,56 @@ export default {
     artists() {
       return this.track.artists || this.track.ar || [];
     },
+    nextTrackCover() {
+      return `${this.player._personalFMNextTrack?.album?.picUrl.replace(
+        'http://',
+        'https://'
+      )}?param=512y512`;
+    },
+  },
+  watch: {
+    track() {
+      this.getColor();
+    },
+  },
+  created() {
+    this.getColor();
+    window.ok = this.getColor;
   },
   methods: {
     play() {
       this.player.playPersonalFM();
     },
     next() {
-      this.player.playNextTrack(true);
+      this.player.playNextFMTrack();
     },
     goToAlbum() {
       if (this.track.album.id === 0) return;
-      this.$router.push({ path: "/album/" + this.track.album.id });
+      this.$router.push({ path: '/album/' + this.track.album.id });
     },
     moveToFMTrash() {
       this.player.moveToFMTrash();
+    },
+    getColor() {
+      if (!this.player.personalFMTrack?.album?.picUrl) return;
+      const cover = `${this.player.personalFMTrack.album.picUrl.replace(
+        'http://',
+        'https://'
+      )}?param=512y512`;
+      Vibrant.from(cover, { colorCount: 1 })
+        .getPalette()
+        .then(palette => {
+          const color = Color.rgb(palette.Vibrant._rgb)
+            .darken(0.1)
+            .rgb()
+            .string();
+          const color2 = Color.rgb(palette.Vibrant._rgb)
+            .lighten(0.28)
+            .rotate(-30)
+            .rgb()
+            .string();
+          this.background = `linear-gradient(to top left, ${color}, ${color2})`;
+        });
     },
   },
 };
@@ -75,13 +121,14 @@ export default {
   background: var(--color-secondary-bg);
   border-radius: 1rem;
   display: flex;
+  height: 198px;
+  box-sizing: border-box;
 }
 .cover {
-  height: 164px;
+  height: 100%;
   clip-path: border-box;
   border-radius: 0.75rem;
   margin-right: 1.2rem;
-  border: 1px solid rgb(243, 243, 243);
   cursor: pointer;
   user-select: none;
 }

@@ -8,21 +8,20 @@
     @mouseleave="hover = false"
   >
     <img
-      :src="imgUrl"
       v-if="!isAlbum"
-      @click="goToAlbum"
+      :src="imgUrl"
+      loading="lazy"
       :class="{ hover: focus }"
+      @click="goToAlbum"
     />
-    <div class="no" v-if="isAlbum">
-      <button v-show="focus && track.playable && !isPlaying" @click="playTrack">
+    <div v-if="showOrderNumber" class="no">
+      <button v-show="focus && playable && !isPlaying" @click="playTrack">
         <svg-icon
           icon-class="play"
           style="height: 14px; width: 14px"
         ></svg-icon>
       </button>
-      <span v-show="(!focus || !track.playable) && !isPlaying">{{
-        track.no
-      }}</span>
+      <span v-show="(!focus || !playable) && !isPlaying">{{ trackNo }}</span>
       <button v-show="isPlaying">
         <svg-icon
           icon-class="volume"
@@ -34,19 +33,24 @@
       <div class="container">
         <div class="title">
           {{ track.name }}
-          <span class="featured" v-if="isAlbum">
+          <span v-if="isSubTitle" :title="subTitle" class="sub-title">
+            ({{ subTitle }})
+          </span>
+          <span v-if="isAlbum" class="featured">
             <ArtistsInLine
               :artists="track.ar"
-              :exclude="this.$parent.albumObject.artist.name"
+              :exclude="$parent.albumObject.artist.name"
               prefix="-"
           /></span>
-          <span v-if="isAlbum && track.mark === 1318912" class="explicit-symbol"
+          <span
+            v-if="isAlbum && (track.mark & 1048576) === 1048576"
+            class="explicit-symbol"
             ><ExplicitSymbol
           /></span>
         </div>
-        <div class="artist" v-if="!isAlbum">
+        <div v-if="!isAlbum" class="artist">
           <span
-            v-if="track.mark === 1318912"
+            v-if="(track.mark & 1048576) === 1048576"
             class="explicit-symbol before-artist"
             ><ExplicitSymbol :size="15"
           /></span>
@@ -55,11 +59,15 @@
       </div>
       <div></div>
     </div>
-    <div class="album" v-if="!isTracklist && !isAlbum">
-      <router-link :to="`/album/${album.id}`">{{ album.name }}</router-link>
+
+    <div v-if="showAlbumName" class="album">
+      <router-link v-if="album && album.id" :to="`/album/${album.id}`">{{
+        album.name
+      }}</router-link>
       <div></div>
     </div>
-    <div class="actions" v-if="!isTracklist">
+
+    <div v-if="showLikeButton" class="actions">
       <button @click="likeThisSong">
         <svg-icon
           icon-class="heart"
@@ -67,75 +75,111 @@
             visibility: focus && !isLiked ? 'visible' : 'hidden',
           }"
         ></svg-icon>
-        <svg-icon icon-class="heart-solid" v-show="isLiked"></svg-icon>
+        <svg-icon v-show="isLiked" icon-class="heart-solid"></svg-icon>
       </button>
     </div>
-    <div class="time" v-if="!isTracklist">
+    <div v-if="showTrackTime" class="time">
       {{ track.dt | formatTime }}
     </div>
+
+    <div v-if="track.playCount" class="count"> {{ track.playCount }}</div>
   </div>
 </template>
 
 <script>
-import ArtistsInLine from "@/components/ArtistsInLine.vue";
-import ExplicitSymbol from "@/components/ExplicitSymbol.vue";
-import { mapState } from "vuex";
+import ArtistsInLine from '@/components/ArtistsInLine.vue';
+import ExplicitSymbol from '@/components/ExplicitSymbol.vue';
+import { mapState } from 'vuex';
+import { isNil } from 'lodash';
 
 export default {
-  name: "TrackListItem",
+  name: 'TrackListItem',
   components: { ArtistsInLine, ExplicitSymbol },
+
   props: {
-    track: Object,
+    trackProp: Object,
+    trackNo: Number,
     highlightPlayingTrack: {
       type: Boolean,
       default: true,
     },
   },
+
   data() {
     return { hover: false, trackStyle: {} };
   },
+
   computed: {
-    ...mapState(["settings"]),
+    ...mapState(['settings']),
+    track() {
+      return this.type === 'cloudDisk'
+        ? this.trackProp.simpleSong
+        : this.trackProp;
+    },
+    playable() {
+      return this.track?.privilege?.pl > 0 || this.track?.playable;
+    },
     imgUrl() {
       let image =
         this.track?.al?.picUrl ??
         this.track?.album?.picUrl ??
-        "https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg";
-      return image + "?param=224y224";
+        'https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg';
+      return image + '?param=224y224';
     },
     artists() {
-      if (this.track.ar !== undefined) return this.track.ar;
-      if (this.track.artists !== undefined) return this.track.artists;
+      const { ar, artists } = this.track;
+      if (!isNil(ar)) return ar;
+      if (!isNil(artists)) return artists;
       return [];
     },
     album() {
-      return this.track.album || this.track.al;
+      return this.track.album || this.track.al || this.track?.simpleSong?.al;
+    },
+    subTitle() {
+      let tn = undefined;
+      if (
+        this.track?.tns?.length > 0 &&
+        this.track.name !== this.track.tns[0]
+      ) {
+        tn = this.track.tns[0];
+      }
+
+      //优先显示alia
+      if (this.$store.state.settings.subTitleDefault) {
+        return this.track?.alia?.length > 0 ? this.track.alia[0] : tn;
+      } else {
+        return tn === undefined ? this.track.alia[0] : tn;
+      }
     },
     type() {
       return this.$parent.type;
     },
     isAlbum() {
-      return this.type === "album";
+      return this.type === 'album';
     },
-    isTracklist() {
-      return this.type === "tracklist";
+    isSubTitle() {
+      return (
+        (this.track?.tns?.length > 0 &&
+          this.track.name !== this.track.tns[0]) ||
+        this.track.alia?.length > 0
+      );
     },
     isPlaylist() {
-      return this.type === "playlist";
+      return this.type === 'playlist';
     },
     isLiked() {
-      return this.$parent.liked.songs.includes(this.track.id);
+      return this.$parent.liked.songs.includes(this.track?.id);
     },
     isPlaying() {
-      return this.$store.state.player.currentTrack.id === this.track.id;
+      return this.$store.state.player.currentTrack.id === this.track?.id;
     },
     trackClass() {
       let trackClass = [this.type];
-      if (!this.track.playable && this.settings.showUnavailableSongInGreyStyle)
-        trackClass.push("disable");
+      if (!this.playable && this.showUnavailableSongInGreyStyle)
+        trackClass.push('disable');
       if (this.isPlaying && this.highlightPlayingTrack)
-        trackClass.push("playing");
-      if (this.focus) trackClass.push("focus");
+        trackClass.push('playing');
+      if (this.focus) trackClass.push('focus');
       return trackClass;
     },
     isMenuOpened() {
@@ -148,18 +192,34 @@ export default {
       );
     },
     showUnavailableSongInGreyStyle() {
-      return this.$store.state.settings.showUnavailableSongInGreyStyle;
+      return process.env.IS_ELECTRON
+        ? !this.$store.state.settings.enableUnblockNeteaseMusic
+        : true;
+    },
+    showLikeButton() {
+      return this.type !== 'tracklist' && this.type !== 'cloudDisk';
+    },
+    showOrderNumber() {
+      return this.type === 'album';
+    },
+    showAlbumName() {
+      return this.type !== 'album' && this.type !== 'tracklist';
+    },
+    showTrackTime() {
+      return this.type !== 'tracklist';
     },
   },
+
   methods: {
     goToAlbum() {
-      this.$router.push({ path: "/album/" + this.track.al.id });
+      if (this.track.al.id === 0) return;
+      this.$router.push({ path: '/album/' + this.track.al.id });
     },
     playTrack() {
       this.$parent.playThisList(this.track.id);
     },
     likeThisSong() {
-      this.$parent.likeASong(this.track.id);
+      this.$parent.likeATrack(this.track.id);
     },
   },
 };
@@ -217,7 +277,6 @@ button {
   }
 
   .explicit-symbol.before-artist {
-    margin-right: 2px;
     .svg-icon {
       margin-bottom: -3px;
     }
@@ -260,6 +319,11 @@ button {
         font-size: 14px;
         opacity: 0.72;
       }
+      .sub-title {
+        color: #7a7a7a;
+        opacity: 0.7;
+        margin-left: 4px;
+      }
     }
     .artist {
       margin-top: 2px;
@@ -293,7 +357,8 @@ button {
     -webkit-line-clamp: 2;
     overflow: hidden;
   }
-  .time {
+  .time,
+  .count {
     font-size: 16px;
     width: 50px;
     cursor: default;
@@ -303,6 +368,11 @@ button {
     font-variant-numeric: tabular-nums;
     opacity: 0.88;
     color: var(--color-text);
+  }
+  .count {
+    font-weight: bold;
+    font-size: 22px;
+    line-height: 22px;
   }
 }
 
@@ -359,12 +429,14 @@ button {
   color: var(--color-primary);
   .title,
   .album,
-  .time {
+  .time,
+  .title-and-artist .sub-title {
     color: var(--color-primary);
   }
   .title .featured,
   .artist,
-  .explicit-symbol {
+  .explicit-symbol,
+  .count {
     color: var(--color-primary);
     opacity: 0.88;
   }
